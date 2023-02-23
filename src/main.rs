@@ -1,131 +1,68 @@
 mod block;
+mod game;
 
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
 use getch_rs::{Getch, Key};
-use block::{MinoKind, MINOS};
-
-// テトリミノがフィールドに衝突する場合はtrueを返す
-fn is_collision(field: &FieldSize, pos: &Position, mino: MinoKind) -> bool {
-    for y in 0..4 {
-        for x in 0..4 {
-            if y+pos.y >= FIELD_HEIGHT || x+pos.x >= FIELD_WIDTH {
-                continue;
-            }
-            if field[y+pos.y][x+pos.x] & MINOS[mino as usize][y][x] == 1 {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-// フィールドを描画する
-fn draw(field: &FieldSize, pos: &Position, mino: MinoKind) {
-    // 描画用フィールドの生成
-    let mut field_buf = field.clone();
-    // 描画用フィールドにテトリミノの情報を書き込む
-    for y in 0..4 {
-        for x in 0..4 {
-            field_buf[y+pos.y][x+pos.x] |= MINOS[mino as usize][y][x];
-        }
-    }
-    // フィールドを描画
-    println!("\x1b[H");  // カーソルを先頭に移動
-    for y in 0..FIELD_HEIGHT {
-        for x in 0..FIELD_WIDTH {
-            if field_buf[y][x] == 1 {
-                print!("[]");
-            } else {
-                print!(" .");
-            }
-        }
-        println!();
-    }
-}
+use block::BLOCKS;
+use game::*;
 
 fn main() {
-    let field = Arc::new(Mutex::new([
-        [1,1,1,0,0,0,0,0,0,1,1,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,0,0,0,0,0,0,0,0,0,0,1],
-        [1,1,1,1,1,1,1,1,1,1,1,1],
-    ]));
-
-    let pos = Arc::new(Mutex::new(Position { x: 4, y: 0 }));
-    let mino = Arc::new(Mutex::new(rand::random::<MinoKind>()));
+    let game = Arc::new(Mutex::new(Game::new()));
 
     // 画面クリア
     println!("\x1b[2J\x1b[H\x1b[?25l");
     // フィールドを描画
-    draw(&field.lock().unwrap(), &pos.lock().unwrap(), *mino.lock().unwrap());
+    draw(&game.lock().unwrap());
 
     // 自然落下処理
     {
-        let pos = Arc::clone(&pos);
-        let field = Arc::clone(&field);
-        let mino = Arc::clone(&mino);
+        let game = Arc::clone(&game);
         let _ = thread::spawn(move || {
             loop {
                 // 1秒間スリーブする
                 thread::sleep(time::Duration::from_millis(1000));
                 // 自然落下
-                let mut pos = pos.lock().unwrap();
-                let mut field = field.lock().unwrap();
-                let mut mino = mino.lock().unwrap();
+                let mut game = game.lock().unwrap();
                 let new_pos = Position {
-                    x: pos.x,
-                    y: pos.y + 1,
+                    x: game.pos.x,
+                    y: game.pos.y + 1,
                 };
-                if !is_collision(&field, &new_pos, *mino) {
+                if !is_collision(&game.field, &new_pos, game.block) {
                     // posの座標を更新
-                    *pos = new_pos;
+                    game.pos = new_pos;
                 } else {
                     // テトリミノをフィールドに固定
+                    let gy = game.pos.y;
+                    let gx = game.pos.x;
                     for y in 0..4 {
                         for x in 0..4 {
-                            field[y+pos.y][x+pos.x] |= MINOS[*mino as usize][y][x];
+                            if BLOCKS[game.block as usize][y][x] == 1 {
+                                game.field[y+gy][x+gx] = 1;
+                            }
                         }
                     }
                     // ラインの削除処理
                     for y in 1..FIELD_HEIGHT-1 {
                         let mut can_erase = true;
                         for x in 0..FIELD_WIDTH {
-                            if field[y][x] == 0 {
+                            if game.field[y][x] == 0 {
                                 can_erase = false;
                                 break;
                             }
                         }
                         if can_erase {
                             for y2 in (2..=y).rev() {
-                                field[y2] = field[y2-1];
+                                game.field[y2] = game.field[y2-1];
                             }
                         }
                     }
                     // posの座標を初期値へ
-                    *pos = Position { x: 4, y: 0 };
-                    *mino = rand::random();
+                    game.pos = Position::init();
+                    game.block = rand::random();
                 }
                 // フィールドを描画
-                draw(&field, &pos, *mino);
+                draw(&game);
             }
         });
     }
@@ -136,50 +73,44 @@ fn main() {
         // キー入力待ち
         match g.getch() {
             Ok(Key::Left) => {
-                let mut pos = pos.lock().unwrap();
-                let field = field.lock().unwrap();
-                let mino = mino.lock().unwrap();
+                let mut game = game.lock().unwrap();
                 let new_pos = Position {
-                    x: pos.x.checked_sub(1).unwrap_or_else(|| pos.x),
-                    y: pos.y,
+                    x: game.pos.x.checked_sub(1).unwrap_or_else(|| game.pos.x),
+                    y: game.pos.y,
                 };
-                if !is_collision(&field, &new_pos, *mino) {
+                if !is_collision(&game.field, &new_pos, game.block) {
                     // posの座標を更新
-                    *pos = new_pos;
+                    game.pos = new_pos;
                 }
                 // フィールドを描画
-                draw(&field, &pos, *mino);
+                draw(&game);
             }
 
             Ok(Key::Down) => {
-                let mut pos = pos.lock().unwrap();
-                let field = field.lock().unwrap();
-                let mino = mino.lock().unwrap();
+                let mut game = game.lock().unwrap();
                 let new_pos = Position {
-                    x: pos.x,
-                    y: pos.y + 1,
+                    x: game.pos.x,
+                    y: game.pos.y + 1,
                 };
-                if !is_collision(&field, &new_pos, MinoKind::I) {
+                if !is_collision(&game.field, &new_pos, game.block) {
                     // posの座標を更新
-                    *pos = new_pos;
+                    game.pos = new_pos;
                 }
                 // フィールドを描画
-                draw(&field, &pos, *mino);
+                draw(&game);
             }
             Ok(Key::Right) => {
-                let mut pos = pos.lock().unwrap();
-                let field = field.lock().unwrap();
-                let mino = mino.lock().unwrap();
+                let mut game = game.lock().unwrap();
                 let new_pos = Position {
-                    x: pos.x + 1,
-                    y: pos.y,
+                    x: game.pos.x + 1,
+                    y: game.pos.y,
                 };
-                if !is_collision(&field, &new_pos, *mino) {
+                if !is_collision(&game.field, &new_pos, game.block) {
                     // posの座標を更新
-                    *pos = new_pos;
+                    game.pos = new_pos;
                 }
                 // フィールドを描画
-                draw(&field, &pos, *mino);
+                draw(&game);
             }
             Ok(Key::Char('q')) => {
                 // カーソルを再表示
