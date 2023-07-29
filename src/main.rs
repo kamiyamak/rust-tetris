@@ -1,10 +1,10 @@
 mod block;
 mod game;
 
+use game::*;
+use getch_rs::{Getch, Key};
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
-use getch_rs::{Getch, Key};
-use game::*;
 
 fn main() {
     let game = Arc::new(Mutex::new(Game::new()));
@@ -27,18 +27,16 @@ fn main() {
                     x: game.pos.x,
                     y: game.pos.y + 1,
                 };
-                if !is_collision(&game.field, &new_pos, game.block) {
+                if !is_collision(&game.field, &new_pos, &game.block) {
                     // posの座標を更新
                     game.pos = new_pos;
                 } else {
-                    // テトリミノをフィールドに固定
-                    fix_block(&mut game);
-                    // ラインの削除処理
-                    erase_line(&mut game.field);
-                    // posの座標を初期値へ
-                    game.pos = Position::init();
-                    // ブロックをランダム生成
-                    game.block = rand::random();
+                    // ブロック落下後の処理
+                    if landing(&mut game).is_err() {
+                        // ブロックを生成できないならゲームオーバー
+                        gameover(&game);
+                        break;
+                    }
                 }
                 // フィールドを描画
                 draw(&game);
@@ -72,6 +70,17 @@ fn main() {
                 // フィールドを描画
                 draw(&game);
             }
+            Ok(Key::Up) => {
+                // ハードドロップ
+                let mut game = game.lock().unwrap();
+                hard_drop(&mut game);
+                if landing(&mut game).is_err() {
+                    // ブロックを生成できないならゲームオーバー
+                    gameover(&game);
+                    break;
+                }
+                draw(&game);
+            }
             Ok(Key::Right) => {
                 let mut game = game.lock().unwrap();
                 let new_pos = Position {
@@ -82,12 +91,25 @@ fn main() {
                 // フィールドを描画
                 draw(&game);
             }
+            Ok(Key::Char('z')) => {
+                // 左回転
+                let mut game = game.lock().unwrap();
+                rotate_left(&mut game);
+                draw(&game);
+            }
+            Ok(Key::Char('x')) => {
+                // 右回転
+                let mut game = game.lock().unwrap();
+                rotate_right(&mut game);
+                draw(&game);
+            }
             Ok(Key::Char('q')) => {
-                // カーソルを再表示
-                println!("\x1b[?25h");
-                return
+                break;
             }
             _ => (), // 何もしない
         }
     }
+
+    // 終了処理
+    quit();
 }
