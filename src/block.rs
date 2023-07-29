@@ -1,9 +1,11 @@
 use rand::{
     distributions::{Distribution, Standard},
-    Rng,
+    seq::SliceRandom,
+    thread_rng, Rng,
 };
 
 // テトリミノの種類
+const BLOCK_KIND_MAX: usize = 7;
 #[derive(Clone, Copy)]
 pub enum BlockKind {
     I,
@@ -62,7 +64,7 @@ pub const COLOR_TABLE: [&str; 10] = [
 
 // テトリミノの形状
 pub type BlockShape = [[usize; 4]; 4];
-pub const BLOCKS: [[[usize; 4]; 4]; 7] = [
+pub const BLOCKS: [BlockShape; BLOCK_KIND_MAX] = [
     // Iミノ
     [[0, 0, 0, 0], [0, 0, 0, 0], [I, I, I, I], [0, 0, 0, 0]],
     // Oミノ
@@ -78,3 +80,19 @@ pub const BLOCKS: [[[usize; 4]; 4]; 7] = [
     // Tミノ
     [[0, 0, 0, 0], [0, T, 0, 0], [T, T, T, 0], [0, 0, 0, 0]],
 ];
+
+// シャッフルされた7種のブロックを生成
+pub fn gen_block_7() -> [BlockShape; BLOCK_KIND_MAX] {
+    let mut rng = thread_rng();
+    let mut que = [
+        BlockKind::I,
+        BlockKind::O,
+        BlockKind::S,
+        BlockKind::Z,
+        BlockKind::J,
+        BlockKind::L,
+        BlockKind::T,
+    ];
+    que.shuffle(&mut rng);
+    que.map(|block| BLOCKS[block as usize])
+}
